@@ -4,14 +4,16 @@ import os
 
 let log = Logger(subsystem: "app.pinza.Pinza", category: "line")
 
-/// One note hanging on the line.
+/// One note hanging on the line: a file of any kind.
 struct Pegged: Identifiable, Equatable {
     let id = UUID()
     let url: URL
-    /// The note drawn as a sheet of paper, see NoteCard.
+    /// What hangs: a text note drawn as a sheet of paper (see NoteCard), or
+    /// any other file's preview (see FileCard).
     var thumb: NSImage
-    /// The note's text as last read, for copying and dragging.
-    var text: String
+    /// A text note's words as last read, for copying and dragging. Nil for
+    /// any other kind of file.
+    var text: String?
     /// When the file was last changed, to notice edits made in other apps.
     var modified: Date?
     /// Every note hangs a little crooked, like on a real line.
@@ -36,6 +38,8 @@ final class Line: ObservableObject {
     @Published var pressedID: UUID?
     /// Whether the line has slid down into view.
     @Published var revealed = false
+    /// Something from another app is being dragged over the line.
+    @Published var dropTargeted = false
 
     /// Card frames in window coordinates, reported by the views. The panel
     /// uses them to only catch clicks over notes and let the rest through.
@@ -156,7 +160,7 @@ final class Line: ObservableObject {
     }
 
     /// Notes changed in another app, like TextEdit after a double click,
-    /// show their new text.
+    /// show their new version.
     func refreshEdited() {
         for item in items where !item.falling && Notes.modificationDate(item.url) != item.modified {
             reloadThumbnail(for: item.url)
@@ -165,16 +169,28 @@ final class Line: ObservableObject {
 
     // MARK: Actions on one note
 
-    /// The latest text of a note, read again in case it was edited elsewhere.
+    /// The latest text of a text note, read again in case it was edited
+    /// elsewhere. Nil for any other kind of file.
     func text(of id: UUID) -> String? {
-        guard let item = items.first(where: { $0.id == id }) else { return nil }
+        guard let item = items.first(where: { $0.id == id }), item.text != nil else { return nil }
         return Notes.read(item.url) ?? item.text
     }
 
+    func url(of id: UUID) -> URL? {
+        items.first(where: { $0.id == id })?.url
+    }
+
+    /// The text of a text note; the picture and the file of an image; the
+    /// file of anything else, which apps paste as the file itself.
     func copy(_ id: UUID) {
-        guard let text = text(of: id) else { return }
+        guard let url = url(of: id) else { return }
         let entry = NSPasteboardItem()
-        entry.setString(text, forType: .string)
+        if let text = text(of: id) {
+            entry.setString(text, forType: .string)
+        } else {
+            if Notes.isImage(url), let png = pngData(url) { entry.setData(png, forType: .png) }
+            entry.setString(url.absoluteString, forType: .fileURL)
+        }
         entry.setData(Data(), forType: Line.ownType)
         let pb = NSPasteboard.general
         pb.clearContents()
@@ -186,7 +202,7 @@ final class Line: ObservableObject {
         }
     }
 
-    /// Opens the file in the app that edits text, TextEdit unless changed.
+    /// Opens the file in its app: TextEdit for text unless changed.
     func open(_ id: UUID) {
         guard let item = items.first(where: { $0.id == id }) else { return }
         NSWorkspace.shared.open(item.url)
@@ -266,10 +282,23 @@ final class Line: ObservableObject {
         }
     }
 
-    /// Long press: open the note in the editor sheet, where it was written.
+    /// Long press: a text note opens on the sheet it was written on, an
+    /// image in the system Markup editor, and anything else in Quick Look.
     func edit(_ id: UUID) {
         guard let item = items.first(where: { $0.id == id }) else { return }
-        NoteEditor.shared.edit(item.url)
+        if item.text != nil {
+            NoteEditor.shared.edit(item.url)
+        } else if Notes.isImage(item.url) {
+            Markup.shared.edit(item.url)
+        } else {
+            quickLook(id)
+        }
+    }
+
+    /// Whether a long press edits this note, for its menu.
+    func canEdit(_ id: UUID) -> Bool {
+        guard let item = items.first(where: { $0.id == id }) else { return false }
+        return item.text != nil || Notes.isImage(item.url)
     }
 
     /// After editing, the note on the line shows the new version.
@@ -290,9 +319,7 @@ final class Line: ObservableObject {
 
     /// After a change of size, every note is redrawn sharp at the new one.
     func reloadThumbnails() {
-        for i in items.indices where !items[i].falling {
-            if let thumb = NoteCard.render(items[i].text) { items[i].thumb = thumb }
-        }
+        for item in items where !item.falling { reloadThumbnail(for: item.url) }
     }
 
     func reveal(_ id: UUID) {
@@ -333,11 +360,34 @@ final class Line: ObservableObject {
 
     // MARK: Helpers
 
+    /// A text file with words in it hangs as paper; anything else, an empty
+    /// or unreadable text file included, as its preview, which Quick Look
+    /// draws a moment later.
     private func makeItem(_ url: URL) -> Pegged? {
-        guard let text = Notes.read(url),
-              !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-              let thumb = NoteCard.render(text) else { return nil }
-        return Pegged(url: url, thumb: thumb, text: text, modified: Notes.modificationDate(url))
+        let modified = Notes.modificationDate(url)
+        if Notes.isText(url), let text = Notes.read(url),
+           !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+           let thumb = NoteCard.render(text) {
+            return Pegged(url: url, thumb: thumb, text: text, modified: modified)
+        }
+        guard FileManager.default.fileExists(atPath: url.path),
+              let thumb = FileCard.placeholder(for: url) else { return nil }
+        if !Notes.isImage(url) {
+            FileCard.preview(for: url) { [weak self] preview in
+                guard let self,
+                      let i = self.items.firstIndex(where: { $0.url == url && !$0.falling }),
+                      self.items[i].modified == modified else { return }
+                self.items[i].thumb = preview
+            }
+        }
+        return Pegged(url: url, thumb: thumb, text: nil, modified: modified)
+    }
+
+    private func pngData(_ url: URL) -> Data? {
+        if url.pathExtension.lowercased() == "png" { return try? Data(contentsOf: url) }
+        guard let tiff = NSImage(contentsOf: url)?.tiffRepresentation,
+              let rep = NSBitmapImageRep(data: tiff) else { return nil }
+        return rep.representation(using: .png, properties: [:])
     }
 
     private func play(_ name: String, volume: Float) {

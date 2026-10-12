@@ -7,9 +7,9 @@
 "Show line" = "Show line";
 "New Note…" = "New Note…";
 "Take everything down" = "Take everything down";
-"Hang copied text" = "Hang copied text";
-"Text you copy hangs on the line as a note" = "Text you copy hangs on the line as a note";
-"Pinza, hanging copied text" = "Pinza, hanging copied text";
+"Hang copied items" = "Hang copied items";
+"Text, images and files you copy hang on the line too" = "Text, images and files you copy hang on the line too";
+"Pinza, hanging copied items" = "Pinza, hanging copied items";
 "Bring the line down" = "Bring the line down";
 "When the pointer rests in the menu bar" = "When the pointer rests in the menu bar";
 "When something new hangs" = "When something new hangs";
@@ -18,7 +18,7 @@
 "Add Folder…" = "Add Folder…";
 "Stop Watching" = "Stop Watching";
 "Watch" = "Watch";
-"New text files saved to this folder will hang on the line." = "New text files saved to this folder will hang on the line.";
+"New files saved to this folder will hang on the line." = "New files saved to this folder will hang on the line.";
 "Keep on line" = "Keep on line";
 "As many as fit" = "As many as fit";
 "%d notes" = "%d notes";
@@ -66,8 +66,9 @@
 "Save" = "Save";
 
 /* LineView */
-"Press %@ to write a note and it will hang here" = "Press %@ to write a note and it will hang here";
-"Write a note from the menu bar and it will hang here" = "Write a note from the menu bar and it will hang here";
+"Press %@ to write a note, or drop anything here" = "Press %@ to write a note, or drop anything here";
+"Write a note from the menu bar, or drop anything here" = "Write a note from the menu bar, or drop anything here";
+"Let go to hang it here" = "Let go to hang it here";
 
 /* PeggedView */
 "Copied" = "Copied";

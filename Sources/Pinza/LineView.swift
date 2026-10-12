@@ -62,12 +62,6 @@ struct LineView: View {
             ZStack(alignment: .topLeading) {
                 Rope(width: width)
 
-                if line.items.isEmpty {
-                    Hint()
-                        .position(x: width / 2, y: Layout.ropeY(x: width / 2, width: width) + 34)
-                        .transition(.opacity)
-                }
-
                 ForEach(Array(line.items.enumerated()), id: \.element.id) { index, item in
                     let x = Layout.x(index: index, count: line.items.count, width: width,
                                      visible: line.visibleCount, scroll: line.scroll)
@@ -78,9 +72,21 @@ struct LineView: View {
                         .opacity(min(1, max(0, min(x, width - x) / 90)))
                         .position(x: x, y: ropeY - Layout.pinAbove + (Layout.panelHeight - ropeY) / 2)
                 }
+
+                // Under an empty line it says how to hang something; over a
+                // full one, while something is dragged in, that it will.
+                if line.items.isEmpty || line.dropTargeted {
+                    Hint(dropping: line.dropTargeted)
+                        .position(x: width / 2, y: line.items.isEmpty
+                                  ? Layout.ropeY(x: width / 2, width: width) + 34
+                                  : Layout.panelHeight - 16)
+                        .allowsHitTesting(false)
+                        .transition(.opacity)
+                }
             }
             .animation(.spring(response: 0.55, dampingFraction: 0.78), value: line.items.map(\.id))
             .animation(.easeInOut(duration: 0.3), value: line.items.isEmpty)
+            .animation(.easeInOut(duration: 0.2), value: line.dropTargeted)
             // Tucked away, the whole line waits above the top edge and slides
             // out from under the menu bar, the way an auto-hiding Dock does.
             .offset(y: line.revealed ? 0 : -(Layout.panelHeight + 12))
@@ -94,12 +100,16 @@ struct LineView: View {
 }
 
 private struct Hint: View {
+    /// Something is being dragged over the line.
+    let dropping: Bool
+
     /// Names the shortcut that writes a note, when there is one.
     private var text: String {
+        if dropping { return L("Let go to hang it here") }
         guard let shortcut = Shortcut.saved(for: .newNote) else {
-            return L("Write a note from the menu bar and it will hang here")
+            return L("Write a note from the menu bar, or drop anything here")
         }
-        return String(format: L("Press %@ to write a note and it will hang here"), shortcut.display)
+        return String(format: L("Press %@ to write a note, or drop anything here"), shortcut.display)
     }
 
     var body: some View {

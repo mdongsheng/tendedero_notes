@@ -11,8 +11,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var panel: LinePanel!
     private var statusItem: NSStatusItem!
     private var watcher: NoteWatcher!
-    /// Folders chosen in "Also watch folders", like the one another notes
-    /// app or a sync service saves text files to.
+    /// Folders chosen in "Also watch folders", like Downloads or the one a
+    /// sync service saves to.
     private var folderWatchers: [NoteWatcher] = []
     private var clipboardWatcher: ClipboardWatcher!
     private var hotKeys: [Shortcut.Purpose: HotKey] = [:]
@@ -61,7 +61,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         let host = NSHostingView(rootView: LineView(line: line))
         host.sizingOptions = []
-        panel = LinePanel(content: host)
+        let drop = DropView(content: host)
+        drop.onTargeted = { [weak self] on in
+            if self?.line.dropTargeted != on { self?.line.dropTargeted = on }
+        }
+        drop.onDrop = { [weak self] pb in
+            guard let self else { return false }
+            let urls = Intake.notes(from: pb, prefix: "Dropped")
+            urls.forEach { self.hangNote($0) }
+            return !urls.isEmpty
+        }
+        panel = LinePanel(content: drop)
         panel.placeOnScreen()
         updateCapacity()
 
@@ -76,6 +86,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         watchMenuBarClicks()
 
         NoteEditor.shared.onSaved = { [weak self] url in self?.line.reloadThumbnail(for: url) }
+        Markup.shared.onSaved = { [weak self] url in self?.line.reloadThumbnail(for: url) }
         NoteEditor.shared.onCreated = { [weak self] url, from in self?.hangNote(url, from: from) }
         panel.onScroll = { [weak self] event in
             // Sideways on a trackpad, or the wheel of a mouse.
@@ -132,7 +143,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func startWatcher() {
         watcher?.stop()
-        // Pinza's own folder: a text file put there hangs, and a note moved,
+        // Pinza's own folder: a file put there hangs, and a note moved,
         // deleted or edited from outside is noticed.
         watcher = NoteWatcher(
             folder: Notes.folder,
@@ -160,8 +171,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// folder, few enough that your own notes still have room on the line.
     static let maxExtraFolders = 3
 
-    /// The folders from "Also watch folders" that still exist. New text files
-    /// in them hang like notes; taking one down leaves the file there.
+    /// The folders from "Also watch folders" that still exist. New files in
+    /// them hang like notes; taking one down leaves the file there.
     static var extraFolders: [URL] {
         get {
             let paths = UserDefaults.standard.stringArray(forKey: "extraFolders") ?? []
@@ -180,7 +191,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         panel.canChooseFiles = false
         panel.allowsMultipleSelection = false
         panel.prompt = L("Watch")
-        panel.message = L("New text files saved to this folder will hang on the line.")
+        panel.message = L("New files saved to this folder will hang on the line.")
         NSApp.activate(ignoringOtherApps: true)
         guard panel.runModal() == .OK, let url = panel.url, Self.extraFolders.count < Self.maxExtraFolders,
               !Self.extraFolders.contains(where: { $0.standardizedFileURL == url.standardizedFileURL }) else { return }
@@ -220,7 +231,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     // MARK: The note flying to the line
 
     /// A new note lifts off the sheet it was written on and flies to its
-    /// place on the line. One from the clipboard or a folder simply drops in.
+    /// place on the line. One copied, dropped or from a folder simply drops in.
     private func hangNote(_ url: URL, from: CGRect? = nil) {
         let screen = from.flatMap { from in
             NSScreen.screens.first { NSMouseInRect(CGPoint(x: from.midX, y: from.midY), $0.frame, false) }
@@ -251,8 +262,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // Sharp while it starts out at the sheet's size: drawn as large as the
         // editor's paper, which is several times the card's.
         let scale = screen.backingScaleFactor * max(1, min(4, from.width / to.width))
-        guard let image = NoteCard.render(item.text, scale: scale)?
-            .cgImage(forProposedRect: nil, context: nil, hints: nil) else {
+        let sharp = item.text.flatMap { NoteCard.render($0, scale: scale) } ?? item.thumb
+        guard let image = sharp.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
             line.land(id)
             return
         }
@@ -297,9 +308,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         } else {
             dismiss()
         }
-        // The cursor is watched while there is a line, even tucked away,
-        // to notice it pushing against the top edge.
-        if wanted { startMouseTracking() } else { stopMouseTracking() }
+        // The cursor is always watched, even with the line tucked away or
+        // empty, to notice it pushing against the top edge, or bringing
+        // something to hang there.
+        startMouseTracking()
     }
 
     private func present() {
@@ -382,12 +394,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         mouseTimer = timer
     }
 
-    private func stopMouseTracking() {
-        mouseTimer?.invalidate()
-        mouseTimer = nil
-        panel.ignoresMouseEvents = true
-    }
-
     /// How long the cursor rests against the top edge before the line comes
     /// down. Short enough to feel instant, long enough that a quick trip to
     /// the menu bar does not trigger it.
@@ -423,6 +429,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             clickMonitors.append(local)
         }
     }
+    /// The mouse is held down for something other than a note's own drag:
+    /// most likely a file or a picture on its way from another app.
+    static var isDraggingIn: Bool {
+        NSEvent.pressedMouseButtons & 1 != 0 && !GrabView.isDragging
+    }
+
     /// How long the cursor is away before the line tucks back up.
     private static let retractDelay: TimeInterval = 0.5
 
@@ -438,8 +450,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             // Resting in the menu bar brings the line down on that screen.
             // Pushing against the top edge is part of it, and it also works
             // when another display sits above and the pointer never stops.
-            if Self.opensFromMenuBar, let screen = screenUnderPointer, inMenuBar, !menuBarSuppressed,
-               !FullScreen.blocksLine(on: screen) {
+            // An empty line only comes down for something brought to hang.
+            if Self.opensFromMenuBar, wanted || Self.isDraggingIn, let screen = screenUnderPointer, inMenuBar,
+               !menuBarSuppressed, !FullScreen.blocksLine(on: screen) {
                 let since = hotZoneSince ?? now
                 hotZoneSince = since
                 if now.timeIntervalSince(since) >= Self.revealDelay {
@@ -448,6 +461,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                         panel.placeOnScreen()
                         updateCapacity()
                     }
+                    wanted = true
                     refresh()
                     reveal()
                 }
@@ -467,7 +481,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if inside && pinned { pinned = false }
 
         let busy = pinned || GrabView.isDragging || GrabView.isShowingMenu
-            || line.pressedID != nil || now < peekUntil
+            || line.pressedID != nil || line.dropTargeted || now < peekUntil
         if inside || busy {
             awaySince = nil
         } else {
@@ -476,6 +490,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             if now.timeIntervalSince(since) >= Self.retractDelay {
                 awaySince = nil
                 setRevealed(false)
+                // Brought down for a drop that never came: nothing to keep.
+                if line.liveCount == 0 && !keepOpen {
+                    wanted = false
+                    refresh()
+                }
             }
         }
     }
@@ -488,6 +507,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let local = panel.convertPoint(fromScreen: mouse)
         let flipped = CGPoint(x: local.x, y: panel.frame.height - local.y)
         var overPhoto = line.hitRects.values.contains { $0.insetBy(dx: -4, dy: -4).contains(flipped) }
+        // Something dragged from another app takes the whole strip, so it can
+        // be dropped anywhere along the line.
+        if !overPhoto, Self.isDraggingIn, NSMouseInRect(mouse, panel.frame, false) { overPhoto = true }
         // A line longer than the screen also takes the band the notes hang
         // in, gaps included, so a swipe anywhere along it moves it.
         if !overPhoto, line.items.count > line.visibleCount, Line.keepOnLine != nil {
@@ -577,11 +599,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         statusItem.menu = menu
     }
 
-    /// The pin fills in while copied text is hung, so it shows at a glance
+    /// The pin fills in while copied items are hung, so it shows at a glance
     /// that the clipboard is being watched.
     private func updateStatusIcon() {
         let on = ClipboardWatcher.isEnabled
-        let description = on ? L("Pinza, hanging copied text") : "Pinza"
+        let description = on ? L("Pinza, hanging copied items") : "Pinza"
         let image = NSImage(systemSymbolName: on ? "pin.fill" : "pin", accessibilityDescription: description)
         image?.isTemplate = true
         statusItem.button?.image = image
@@ -607,11 +629,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         clearItem.isEnabled = line.liveCount > 0
         menu.addItem(clearItem)
 
-        let clipboard = ClosureMenuItem(L("Hang copied text")) { [weak self] in
+        let clipboard = ClosureMenuItem(L("Hang copied items")) { [weak self] in
             self?.setClipboard(!ClipboardWatcher.isEnabled)
         }
         clipboard.state = ClipboardWatcher.isEnabled ? .on : .off
-        clipboard.toolTip = L("Text you copy hangs on the line as a note")
+        clipboard.toolTip = L("Text, images and files you copy hang on the line too")
         menu.addItem(clipboard)
 
         let bringDown = NSMenuItem(title: L("Bring the line down"), action: nil, keyEquivalent: "")

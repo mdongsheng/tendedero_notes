@@ -2,15 +2,16 @@ import AppKit
 import SwiftUI
 
 /// Bridges each note to AppKit's drag and drop, so it can be dragged into
-/// any app as its text, or anywhere in Finder as a real file. Each
+/// any app as its text or its file, or anywhere in Finder as a real file. Each
 /// destination means one thing:
 ///
-/// - An app gets a copy of the text, and the note stays on the line.
+/// - An app gets a copy, the text of a text note or else the file, and the
+///   note stays on the line.
 /// - A folder or the Desktop keeps the file, and the note leaves the line.
 /// - The Trash discards it.
 /// - Nowhere that accepts it: the note flies back to the line.
 ///
-/// Click copies, press and hold opens the editor, the corner cross discards.
+/// Click copies, press and hold edits, the corner cross discards.
 struct GrabArea: NSViewRepresentable {
     let item: Pegged
     let line: Line
@@ -34,7 +35,7 @@ struct GrabArea: NSViewRepresentable {
         let id = item.id
         let line = line
         view.url = item.url
-        view.text = { line.text(of: id) ?? "" }
+        view.text = { line.text(of: id) }
         view.dragImage = item.thumb
         view.onClick = { line.copy(id) }
         view.onDoubleClick = { line.open(id) }
@@ -54,7 +55,9 @@ struct GrabArea: NSViewRepresentable {
             // Items say themselves whether they can be used.
             menu.autoenablesItems = false
             menu.addItem(ClosureMenuItem(L("Copy")) { line.copy(id) })
-            menu.addItem(ClosureMenuItem(L("Edit")) { line.edit(id) })
+            if line.canEdit(id) {
+                menu.addItem(ClosureMenuItem(L("Edit")) { line.edit(id) })
+            }
             menu.addItem(ClosureMenuItem(L("Open")) { line.open(id) })
             menu.addItem(ClosureMenuItem(L("Quick Look")) { line.quickLook(id) })
             menu.addItem(ClosureMenuItem(L("Show in Finder")) { line.reveal(id) })
@@ -86,7 +89,7 @@ final class GrabView: NSView, NSDraggingSource {
     static var isShowingMenu = false
 
     var url: URL?
-    var text: () -> String = { "" }
+    var text: () -> String? = { nil }
     var dragImage: NSImage?
     var onClick: () -> Void = {}
     var onDoubleClick: () -> Void = {}
@@ -169,9 +172,9 @@ final class GrabView: NSView, NSDraggingSource {
         startedDrag = true
         endPress()
 
-        // The text for apps, the file for Finder, which moves it.
+        // A text note's words for apps, and the file for Finder, which moves it.
         let entry = NSPasteboardItem()
-        entry.setString(text(), forType: .string)
+        if let text = text() { entry.setString(text, forType: .string) }
         entry.setString(url.absoluteString, forType: .fileURL)
         entry.setData(Data(), forType: Line.ownType)
         let item = NSDraggingItem(pasteboardWriter: entry)

@@ -1,21 +1,40 @@
 import Foundation
 
-/// Where notes live: one plain text file per note, in Pinza's own folder.
+/// Where notes live: one file per note, in Pinza's own folder.
 ///
-/// Plain text files, so a note behaves like a screenshot does on the line:
-/// it can be dragged into a folder to keep it, into an app to send it, to
-/// the Trash to let it go, and opened in any editor.
+/// A note is any file: text written on the sheet, an image or text copied or
+/// dropped on the line, a PDF or a document from Finder. Being files, they
+/// behave like a screenshot does on the line: dragged into a folder to keep
+/// one, into an app to send it, to the Trash to let it go.
 enum Notes {
     static let folder: URL = {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         return base.appendingPathComponent("Pinza/Notes", isDirectory: true)
     }()
 
-    /// Files that count as notes in a watched folder.
+    /// Text files hang as a sheet of paper with their words on it, and the
+    /// sheet edits them. Everything else hangs as its own preview.
     static let textExtensions: Set<String> = ["txt", "text", "md", "markdown"]
 
-    static func isNote(_ url: URL) -> Bool {
+    static func isText(_ url: URL) -> Bool {
         textExtensions.contains(url.pathExtension.lowercased())
+    }
+
+    static let imageExtensions: Set<String> = ["png", "jpg", "jpeg", "heic", "tif", "tiff", "gif", "webp", "bmp"]
+
+    static func isImage(_ url: URL) -> Bool {
+        imageExtensions.contains(url.pathExtension.lowercased())
+    }
+
+    /// Files still being written by a browser or a download tool.
+    private static let partialExtensions: Set<String> = ["download", "crdownload", "part", "partial", "tmp"]
+
+    /// Whether a file in a watched folder hangs: any file or package, but no
+    /// folder, and nothing still downloading.
+    static func isNote(_ url: URL) -> Bool {
+        guard !partialExtensions.contains(url.pathExtension.lowercased()),
+              let values = try? url.resourceValues(forKeys: [.isRegularFileKey, .isPackageKey]) else { return false }
+        return values.isRegularFile == true || values.isPackage == true
     }
 
     /// Anything bigger is not a note.
@@ -40,6 +59,25 @@ enum Notes {
             let url = uniqueURL(in: folder, for: fileName(for: text, prefix: prefix))
             try text.write(to: url, atomically: true, encoding: .utf8)
             // What people write can be private: only they can read it.
+            try fm.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+            return url
+        } catch {
+            log.error("Could not save a note: \(error.localizedDescription, privacy: .public)")
+            return nil
+        }
+    }
+
+    /// Saves an image, copied or dropped, as a PNG note.
+    static func create(png: Data, prefix: String) -> URL? {
+        save(png, as: "\(prefix) \(stamp()).png")
+    }
+
+    private static func save(_ data: Data, as name: String) -> URL? {
+        let fm = FileManager.default
+        do {
+            try fm.createDirectory(at: folder, withIntermediateDirectories: true)
+            let url = uniqueURL(in: folder, for: name)
+            try data.write(to: url, options: .atomic)
             try fm.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
             return url
         } catch {
@@ -103,7 +141,8 @@ enum Notes {
         var candidate = folder.appendingPathComponent(name)
         var n = 2
         while FileManager.default.fileExists(atPath: candidate.path) {
-            candidate = folder.appendingPathComponent("\(base) \(n)").appendingPathExtension(ext)
+            candidate = folder.appendingPathComponent("\(base) \(n)")
+            if !ext.isEmpty { candidate.appendPathExtension(ext) }
             n += 1
         }
         return candidate
