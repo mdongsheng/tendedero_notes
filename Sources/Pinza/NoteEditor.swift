@@ -338,7 +338,7 @@ final class NoteEditor: NSObject, NSWindowDelegate, NSTextViewDelegate {
 
     private func done() {
         guard let window, let textView, let storage = textView.textStorage else { return }
-        let rich = NSAttributedString(attributedString: storage)
+        let rich = Self.savable(storage)
         let words = Notes.plainText(of: rich)
         let attached = Notes.hasAttachments(rich)
         let empty = !attached && words.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -366,6 +366,25 @@ final class NoteEditor: NSObject, NSWindowDelegate, NSTextViewDelegate {
         let from = paperView.map { window.convertToScreen($0.convert($0.bounds, to: nil)) } ?? window.frame
         close()
         onCreated(url, from)
+    }
+
+    /// Every attachment is saved from its file. A picture that only has an
+    /// image, as some paths leave it, gets a PNG file to save.
+    private static func savable(_ text: NSAttributedString) -> NSAttributedString {
+        let result = NSMutableAttributedString(attributedString: text)
+        result.enumerateAttribute(.attachment, in: NSRange(location: 0, length: result.length)) { value, range, _ in
+            guard let attachment = value as? NSTextAttachment, attachment.fileWrapper?.regularFileContents == nil,
+                  attachment.fileWrapper?.isDirectory != true,
+                  let tiff = attachment.image?.tiffRepresentation,
+                  let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) else { return }
+            let wrapper = FileWrapper(regularFileWithContents: png)
+            wrapper.preferredFilename = "Pasted.png"
+            let replacement = NSTextAttachment(fileWrapper: wrapper)
+            replacement.image = attachment.image
+            replacement.bounds = attachment.bounds
+            result.addAttribute(.attachment, value: replacement, range: range)
+        }
+        return result
     }
 
     /// A rich note stays rich. A text note stays text unless something was
@@ -505,12 +524,19 @@ final class NoteTextView: NSTextView {
     /// Files are copied into the note, pictures as pictures.
     private func insertAttachments(from pb: NSPasteboard) {
         var pieces: [NSAttributedString] = []
-        if let urls = pb.readObjects(forClasses: [NSURL.self],
-                                     options: [.urlReadingFileURLsOnly: true]) as? [URL] {
+        // An empty list, not nil, when the clipboard holds no files, as after
+        // a screenshot: only real files count.
+        let urls = (pb.readObjects(forClasses: [NSURL.self],
+                                   options: [.urlReadingFileURLsOnly: true]) as? [URL]) ?? []
+        if !urls.isEmpty {
             for url in urls.prefix(Intake.maxFiles) {
                 guard let wrapper = try? FileWrapper(url: url, options: .immediate) else { continue }
                 wrapper.preferredFilename = url.lastPathComponent
-                pieces.append(NSAttributedString(attachment: NSTextAttachment(fileWrapper: wrapper)))
+                let attachment = NSTextAttachment(fileWrapper: wrapper)
+                if Notes.isImage(url), let data = wrapper.regularFileContents, let image = NSImage(data: data) {
+                    show(image, in: attachment)
+                }
+                pieces.append(NSAttributedString(attachment: attachment))
             }
         } else if let type = pb.availableType(from: [.png, .tiff, .pdf]), let data = pb.data(forType: type) {
             // Saved as PNG, which every app reads; a PDF stays a PDF.
@@ -518,7 +544,9 @@ final class NoteTextView: NSTextView {
             let bytes = isPDF ? data : (NSBitmapImageRep(data: data)?.representation(using: .png, properties: [:]) ?? data)
             let wrapper = FileWrapper(regularFileWithContents: bytes)
             wrapper.preferredFilename = isPDF ? "Pasted.pdf" : "Pasted.png"
-            pieces.append(NSAttributedString(attachment: NSTextAttachment(fileWrapper: wrapper)))
+            let attachment = NSTextAttachment(fileWrapper: wrapper)
+            if let image = NSImage(data: bytes) { show(image, in: attachment) }
+            pieces.append(NSAttributedString(attachment: attachment))
         }
         guard !pieces.isEmpty else {
             NSSound.beep()
@@ -537,11 +565,23 @@ final class NoteTextView: NSTextView {
         typingAttributes = Self.inkAttributes
     }
 
+    /// The picture is drawn from the attachment's image, at the sheet's
+    /// width; the file wrapper is what is saved.
+    private func show(_ image: NSImage, in attachment: NSTextAttachment) {
+        attachment.image = image
+        attachment.bounds = CGRect(origin: .zero, size: fitted(image.size))
+    }
+
+    private func fitted(_ size: CGSize) -> CGSize {
+        let width = max(80, bounds.width - textContainerInset.width * 2 - 12)
+        let scale = min(1, width / max(size.width, 1))
+        return CGSize(width: (size.width * scale).rounded(), height: (size.height * scale).rounded())
+    }
+
     /// Pictures shrink to the sheet's width, so a whole screenshot fits.
     /// Files that are not pictures keep their icon.
     func fitAttachments() {
         guard let storage = textStorage else { return }
-        let width = max(80, bounds.width - textContainerInset.width * 2 - 12)
         var changed = false
         storage.enumerateAttribute(.attachment, in: NSRange(location: 0, length: storage.length)) { value, _, _ in
             // Sized once; decoding every picture at each key press would show.
@@ -549,12 +589,10 @@ final class NoteTextView: NSTextView {
                   let image = attachment.image
                     ?? attachment.fileWrapper?.regularFileContents.flatMap(NSImage.init(data:)),
                   image.size.width > 0, image.size.height > 0 else { return }
-            let scale = min(1, width / image.size.width)
-            let size = CGSize(width: (image.size.width * scale).rounded(), height: (image.size.height * scale).rounded())
-            if attachment.bounds.size != size {
-                attachment.bounds = CGRect(origin: .zero, size: size)
-                changed = true
-            }
+            // Pictures read back from a saved note show from their image.
+            if attachment.image == nil { attachment.image = image }
+            attachment.bounds = CGRect(origin: .zero, size: fitted(image.size))
+            changed = true
         }
         if changed {
             storage.edited(.editedAttributes, range: NSRange(location: 0, length: storage.length), changeInLength: 0)
