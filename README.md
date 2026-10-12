@@ -1,0 +1,99 @@
+<p align="center"><b>Pinza</b> · 把便签晾在屏幕顶上的一根绳子上<br><sub>Notes, hung out on a line above your screen.</sub></p>
+
+Pinza 是 [Tendedero](https://github.com/alejandrobujan/tendedero) 的便签版：UI 与交互完全沿用原项目——
+同一根细绳、同样的玻璃卡片和铝制夹子、同样的摆动与微风、同样的手势——只是挂在绳上的不再是截图，而是 **便签**。
+
+每张便签就是 `~/Library/Application Support/Pinza/Notes/` 里的一个纯文本文件，所以它在绳上的行为和截图一模一样：
+拖进 App 就发送文字，拖进文件夹就留下文件，拖到废纸篓就放手。
+
+## 看不见，却够得着
+
+把指针停在菜单栏，绳子就会滑下来；移开，它就收回去。
+按 <kbd>⌃</kbd>&thinsp;<kbd>⌥</kbd>&thinsp;<kbd>N</kbd> 写一张便签，按 <kbd>⌘</kbd>&thinsp;<kbd>↩</kbd>，它会从纸面飞上绳子挂好。
+
+## 一个手势一件事
+
+| 手势 | 作用 |
+|:--|:--|
+| 单击 | 复制便签文字 |
+| 按住 | 在便签纸上编辑（原版：用“标记”打开） |
+| 双击 | 用文本编辑打开（在别处改了，绳上的便签也会跟着更新） |
+| 用力点按 | 快速查看 |
+| 拖进 App | 发送文字，便签留在绳上 |
+| 拖进文件夹 | 留下 `.txt` 文件，便签离开绳子 |
+| 拖到废纸篓，或点左上角的叉 | 放手 |
+| 指针停在菜单栏 | 在这块屏幕上放下绳子 |
+| 点击菜单栏任何东西 | 收起绳子 |
+| 双指横扫 / 滚轮 | 在很长的绳子上前后移动 |
+| <kbd>⌃</kbd>&thinsp;<kbd>⌥</kbd>&thinsp;<kbd>T</kbd> | 显示或隐藏绳子 |
+| <kbd>⌃</kbd>&thinsp;<kbd>⌥</kbd>&thinsp;<kbd>N</kbd> | 写一张新便签 |
+
+便签纸上：<kbd>⌘</kbd>&thinsp;<kbd>↩</kbd> 挂上（或保存），<kbd>Esc</kbd> 收起——没写完的新便签会留作草稿，下次接着写。
+两个快捷键都可以在菜单栏的“快捷键”里修改。
+
+右键便签：复制、编辑、打开、快速查看、在访达中显示、存储到桌面、丢弃、取下左侧/右侧全部。
+
+## 从截图到便签：对照
+
+| Tendedero（截图） | Pinza（便签） |
+|:--|:--|
+| 截一张图，它就挂上去 | <kbd>⌃⌥N</kbd> 写一张便签，它就挂上去 |
+| 截图从截取的位置飞上绳子 | 便签从纸面飞上绳子 |
+| 挂上复制的图片 | 挂上复制的文字（可选，图钉图标会变实心） |
+| 接管截图、不再堆在桌面 | 便签都放在 Pinza 自己的文件夹里，只留下你拖出去的 |
+| 同时监视文件夹（新图片） | 同时监视文件夹（新的 `.txt` / `.md`） |
+| 按住用“标记”编辑 | 按住在便签纸上编辑 |
+| 屏幕录制：按住修剪 | — |
+| 绳上保留 25 / 50 / 100 张、大小、全屏 App 上、声音、登录时打开 | 全部保留 |
+
+密码管理器标记为私密的内容、带文件的复制、以及从绳上复制出来的便签，都不会被当作新便签挂上。
+
+## 隐私
+
+没有账号，不联网，不统计。便签只存在你的 Mac 上。
+
+## 构建
+
+需要 macOS 14 及以上和 Swift 工具链（Xcode 可选）：
+
+```sh
+git clone https://github.com/mdongsheng/tendedero_notes.git
+cd tendedero_notes
+scripts/build-app.sh
+open build/Pinza.app
+```
+
+每次推送，GitHub Actions 都会在 macOS 上构建，并把 `Pinza.zip` 作为构建产物上传。
+本地构建是临时签名（ad hoc）的。
+
+<details>
+<summary>代码结构</summary>
+<br>
+
+| 文件 | 作用 |
+|:--|:--|
+| `AppDelegate.swift` | 菜单栏、快捷键、绳子的放下与收起 |
+| `LinePanel.swift` | 屏幕顶端那条透明的长条窗口 |
+| `LineView.swift` | 绳子本身，以及每张便签挂在哪里 |
+| `PeggedView.swift` | 一张便签：玻璃框、夹子、摆动和微风 |
+| `NoteCard.swift` | 把便签文字画成绳上的那张纸 |
+| `NoteEditor.swift` | 写便签、改便签的那张纸 |
+| `GrabArea.swift` | 单击、按住、拖放 |
+| `CaptureFlight.swift` | 便签飞上绳子、从绳上掉落的动画 |
+| `NoteWatcher.swift` | 发现文件夹里的新便签和改动 |
+| `ClipboardWatcher.swift` | 发现复制的文字 |
+| `Notes.swift` | 便签文件：存放、命名、读写 |
+| `FullScreen.swift` | 知道什么时候该藏起来 |
+| `Line.swift` | 绳上挂着什么，以及能对它们做什么 |
+
+翻译在 `Sources/Pinza/Resources`，每种语言一个 `.lproj` 文件夹（目前是英文和简体中文）。
+`swift scripts/check-strings.swift` 会检查是否有遗漏。
+
+</details>
+
+---
+
+<sub>
+Pinza 基于 Alejandro Buján 的 <a href="https://github.com/alejandrobujan/tendedero">Tendedero</a>（MIT 许可）修改而来。
+按照 Tendedero 的许可要求，本项目使用自己的名字和图标，并非 Tendedero，也未获得其作者背书。见 <a href="LICENSE">LICENSE</a>。
+</sub>

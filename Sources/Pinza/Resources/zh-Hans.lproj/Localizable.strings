@@ -1,0 +1,71 @@
+/* Chinese (Simplified). */
+
+/* AppDelegate */
+"Hide line" = "隐藏晾衣绳";
+"Show line" = "显示晾衣绳";
+"New Note…" = "新建便签…";
+"Take everything down" = "全部取下";
+"Hang copied text" = "挂上复制的文字";
+"Text you copy hangs on the line as a note" = "复制的文字会作为便签挂上绳";
+"Pinza, hanging copied text" = "Pinza，正在挂上复制的文字";
+"Bring the line down" = "放下晾衣绳";
+"When the pointer rests in the menu bar" = "指针停在菜单栏时";
+"When something new hangs" = "有新内容挂上时";
+"Over full screen apps" = "在全屏 App 上";
+"Also watch folders" = "同时监视文件夹";
+"Add Folder…" = "添加文件夹…";
+"Stop Watching" = "停止监视";
+"Watch" = "监视";
+"New text files saved to this folder will hang on the line." = "保存到此文件夹的新文本文件会挂到晾衣绳上。";
+"Keep on line" = "绳上保留";
+"As many as fit" = "放得下的数量";
+"%d notes" = "%d 张";
+"Size" = "大小";
+"Small" = "小";
+"Medium" = "中";
+"Large" = "大";
+"Shortcuts" = "快捷键";
+"Show or hide the line" = "显示或隐藏晾衣绳";
+"New note" = "新建便签";
+"Change Shortcut…" = "更改快捷键…";
+"None" = "无";
+"Open notes folder" = "打开便签文件夹";
+"Sounds" = "声音";
+"Open at login" = "登录时打开";
+"Check for Updates…" = "检查更新…";
+"Quit Pinza" = "退出 Pinza";
+"Could not change the login setting" = "无法更改登录项设置";
+"Move Pinza to the Applications folder and try again." = "请先把 Pinza 移到「应用程序」文件夹，再试一次。";
+
+/* HotKey */
+"Space" = "空格";
+"Change Shortcut" = "更改快捷键";
+"Press the new shortcut" = "请按下新的快捷键";
+"Escape cancels. Delete removes the shortcut." = "按 Esc 取消，按删除键移除快捷键。";
+
+/* GrabArea */
+"Copy" = "复制";
+"Edit" = "编辑";
+"Open" = "打开";
+"Quick Look" = "快速查看";
+"Show in Finder" = "在访达中显示";
+"Save to Desktop" = "存储到桌面";
+"Discard" = "丢弃";
+"Take down" = "取下";
+"Move to Trash" = "移到废纸篓";
+"Take down everything to the left" = "取下左侧全部";
+"Take down everything to the right" = "取下右侧全部";
+
+/* NoteEditor */
+"⌘↩ hangs it on the line" = "⌘↩ 把它挂上晾衣绳";
+"⌘↩ saves it on the line" = "⌘↩ 保存到晾衣绳上";
+"Cancel" = "取消";
+"Hang" = "挂上";
+"Save" = "保存";
+
+/* LineView */
+"Press %@ to write a note and it will hang here" = "按 %@ 写一张便签，它就会挂在这里";
+"Write a note from the menu bar and it will hang here" = "从菜单栏写一张便签，它就会挂在这里";
+
+/* PeggedView */
+"Copied" = "已复制";
