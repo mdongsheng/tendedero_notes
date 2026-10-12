@@ -63,6 +63,13 @@
 "Hang" = "挂上";
 "Save" = "保存";
 
+"Use what you just copied?" = "使用刚才复制的内容？";
+"Use" = "使用";
+"Not now" = "以后再说";
+"%d files" = "%d 个文件";
+"A picture" = "一张图片";
+"Paste or drop a screenshot, a picture or any file here" = "可以把截图、图片或任何文件粘贴或拖到这里";
+
 /* LineView */
 "Press %@ to write a note, or drop anything here" = "按 %@ 写一张便签，或者把任何东西拖到这里";
 "Write a note from the menu bar, or drop anything here" = "从菜单栏写一张便签，或者把任何东西拖到这里";

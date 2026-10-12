@@ -88,6 +88,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         NoteEditor.shared.onSaved = { [weak self] url in self?.line.reloadThumbnail(for: url) }
         Markup.shared.onSaved = { [weak self] url in self?.line.reloadThumbnail(for: url) }
         NoteEditor.shared.onCreated = { [weak self] url, from in self?.hangNote(url, from: from) }
+        NoteEditor.shared.onReplaced = { [weak self] old, new in self?.line.replace(old, with: new) }
+        NoteEditor.shared.watchClipboard()
         panel.onScroll = { [weak self] event in
             // Sideways on a trackpad, or the wheel of a mouse.
             let delta = abs(event.scrollingDeltaX) >= abs(event.scrollingDeltaY)
@@ -262,7 +264,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // Sharp while it starts out at the sheet's size: drawn as large as the
         // editor's paper, which is several times the card's.
         let scale = screen.backingScaleFactor * max(1, min(4, from.width / to.width))
-        let sharp = item.text.flatMap { NoteCard.render($0, scale: scale) } ?? item.thumb
+        let sharp = item.text.flatMap { NoteCard.render($0, image: item.picture, scale: scale) } ?? item.thumb
         guard let image = sharp.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
             line.land(id)
             return

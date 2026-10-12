@@ -11,9 +11,11 @@ struct Pegged: Identifiable, Equatable {
     /// What hangs: a text note drawn as a sheet of paper (see NoteCard), or
     /// any other file's preview (see FileCard).
     var thumb: NSImage
-    /// A text note's words as last read, for copying and dragging. Nil for
-    /// any other kind of file.
+    /// A written note's words as last read, for copying and dragging. Nil
+    /// for any other kind of file.
     var text: String?
+    /// The first picture pasted into a rich note, shown on its card.
+    var picture: NSImage? = nil
     /// When the file was last changed, to notice edits made in other apps.
     var modified: Date?
     /// Every note hangs a little crooked, like on a real line.
@@ -169,11 +171,22 @@ final class Line: ObservableObject {
 
     // MARK: Actions on one note
 
-    /// The latest text of a text note, read again in case it was edited
+    /// The latest text of a written note, read again in case it was edited
     /// elsewhere. Nil for any other kind of file.
     func text(of id: UUID) -> String? {
         guard let item = items.first(where: { $0.id == id }), item.text != nil else { return nil }
+        if Notes.isRich(item.url) { return Notes.readRich(item.url).map(Notes.plainText(of:)) ?? item.text }
         return Notes.read(item.url) ?? item.text
+    }
+
+    /// A note written on the sheet was saved under a new file, a text note
+    /// that now carries a picture or a file: it keeps its place on the line.
+    func replace(_ old: URL, with new: URL) {
+        guard let i = items.firstIndex(where: { $0.url == old && !$0.falling }),
+              let item = makeItem(new) else { return }
+        hitRects[items[i].id] = nil
+        items[i] = item
+        save()
     }
 
     func url(of id: UUID) -> URL? {
@@ -185,7 +198,12 @@ final class Line: ObservableObject {
     func copy(_ id: UUID) {
         guard let url = url(of: id) else { return }
         let entry = NSPasteboardItem()
-        if let text = text(of: id) {
+        if Notes.isRich(url), let rich = Notes.readRich(url) {
+            // Apps that take rich text get the pictures too.
+            let range = NSRange(location: 0, length: rich.length)
+            if let rtfd = rich.rtfd(from: range, documentAttributes: [:]) { entry.setData(rtfd, forType: .rtfd) }
+            entry.setString(Notes.plainText(of: rich), forType: .string)
+        } else if let text = text(of: id) {
             entry.setString(text, forType: .string)
         } else {
             if Notes.isImage(url), let png = pngData(url) { entry.setData(png, forType: .png) }
@@ -307,6 +325,7 @@ final class Line: ObservableObject {
               let fresh = makeItem(url) else { return }
         items[i].thumb = fresh.thumb
         items[i].text = fresh.text
+        items[i].picture = fresh.picture
         items[i].modified = fresh.modified
     }
 
@@ -365,6 +384,14 @@ final class Line: ObservableObject {
     /// draws a moment later.
     private func makeItem(_ url: URL) -> Pegged? {
         let modified = Notes.modificationDate(url)
+        if Notes.isRich(url), let rich = Notes.readRich(url) {
+            let text = Notes.plainText(of: rich)
+            let picture = Notes.firstImage(in: rich)
+            if picture != nil || !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+               let thumb = NoteCard.render(text, image: picture) {
+                return Pegged(url: url, thumb: thumb, text: text, picture: picture, modified: modified)
+            }
+        }
         if Notes.isText(url), let text = Notes.read(url),
            !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
            let thumb = NoteCard.render(text) {

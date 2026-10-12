@@ -1,4 +1,4 @@
-import Foundation
+import AppKit
 
 /// Where notes live: one file per note, in Pinza's own folder.
 ///
@@ -18,6 +18,12 @@ enum Notes {
 
     static func isText(_ url: URL) -> Bool {
         textExtensions.contains(url.pathExtension.lowercased())
+    }
+
+    /// Notes written on the sheet with a picture or a file pasted in are
+    /// saved as rich text documents, which carry them inside.
+    static func isRich(_ url: URL) -> Bool {
+        ["rtfd", "rtf"].contains(url.pathExtension.lowercased())
     }
 
     static let imageExtensions: Set<String> = ["png", "jpg", "jpeg", "heic", "tif", "tiff", "gif", "webp", "bmp"]
@@ -65,6 +71,76 @@ enum Notes {
             log.error("Could not save a note: \(error.localizedDescription, privacy: .public)")
             return nil
         }
+    }
+
+    /// A rich note's text and attachments, or nil if it cannot be read.
+    static func readRich(_ url: URL) -> NSAttributedString? {
+        try? NSAttributedString(url: url, options: [:], documentAttributes: nil)
+    }
+
+    /// Writes a new rich note into the folder, named after its first line.
+    static func create(rich: NSAttributedString) -> URL? {
+        do {
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        } catch {
+            return nil
+        }
+        let url = uniqueURL(in: folder, for: fileName(for: plainText(of: rich), ext: "rtfd"))
+        return write(rich: rich, to: url) ? url : nil
+    }
+
+    /// Writes a rich note over its file, all at once, so a reader never sees
+    /// half a package.
+    @discardableResult
+    static func write(rich: NSAttributedString, to url: URL) -> Bool {
+        let fm = FileManager.default
+        do {
+            let wrapper = try rich.fileWrapper(from: NSRange(location: 0, length: rich.length),
+                                               documentAttributes: [.documentType: NSAttributedString.DocumentType.rtfd])
+            let scratch = try fm.url(for: .itemReplacementDirectory, in: .userDomainMask,
+                                     appropriateFor: folder, create: true)
+            let temp = scratch.appendingPathComponent(url.lastPathComponent)
+            try wrapper.write(to: temp, options: .atomic, originalContentsURL: nil)
+            try fm.setAttributes([.posixPermissions: 0o700], ofItemAtPath: temp.path)
+            if fm.fileExists(atPath: url.path) {
+                _ = try fm.replaceItemAt(url, withItemAt: temp)
+            } else {
+                try fm.moveItem(at: temp, to: url)
+            }
+            try? fm.removeItem(at: scratch)
+            return true
+        } catch {
+            log.error("Could not save \(url.path, privacy: .public): \(error.localizedDescription, privacy: .public)")
+            return false
+        }
+    }
+
+    /// The words of a rich note, without the marks that stand for its
+    /// attachments.
+    static func plainText(of rich: NSAttributedString) -> String {
+        rich.string.replacingOccurrences(of: "\u{FFFC}", with: "")
+    }
+
+    static func hasAttachments(_ rich: NSAttributedString) -> Bool {
+        var found = false
+        rich.enumerateAttribute(.attachment, in: NSRange(location: 0, length: rich.length)) { value, _, stop in
+            if value != nil { found = true; stop.pointee = true }
+        }
+        return found
+    }
+
+    /// The first picture pasted into a rich note, for its card.
+    static func firstImage(in rich: NSAttributedString) -> NSImage? {
+        var image: NSImage?
+        rich.enumerateAttribute(.attachment, in: NSRange(location: 0, length: rich.length)) { value, _, stop in
+            guard let attachment = value as? NSTextAttachment else { return }
+            if let picture = attachment.image
+                ?? attachment.fileWrapper?.regularFileContents.flatMap(NSImage.init(data:)) {
+                image = picture
+                stop.pointee = true
+            }
+        }
+        return image
     }
 
     /// Saves an image, copied or dropped, as a PNG note.
@@ -125,14 +201,14 @@ enum Notes {
 
     /// "Buy milk.txt" for a note that starts with "Buy milk". A note with no
     /// words in its first line is named after the moment it was written.
-    static func fileName(for text: String, prefix: String? = nil) -> String {
+    static func fileName(for text: String, prefix: String? = nil, ext: String = "txt") -> String {
         var name = title(of: text)
             .replacingOccurrences(of: "/", with: "-")
             .replacingOccurrences(of: ":", with: "-")
         while name.hasPrefix(".") { name.removeFirst() }
         if name.count > 48 { name = String(name.prefix(48)).trimmingCharacters(in: .whitespaces) + "…" }
         if name.isEmpty { name = "\(prefix ?? "Note") \(stamp())" }
-        return name + ".txt"
+        return name + "." + ext
     }
 
     static func uniqueURL(in folder: URL, for name: String) -> URL {

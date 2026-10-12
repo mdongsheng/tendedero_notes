@@ -65,6 +65,13 @@
 "Hang" = "Hang";
 "Save" = "Save";
 
+"Use what you just copied?" = "Use what you just copied?";
+"Use" = "Use";
+"Not now" = "Not now";
+"%d files" = "%d files";
+"A picture" = "A picture";
+"Paste or drop a screenshot, a picture or any file here" = "Paste or drop a screenshot, a picture or any file here";
+
 /* LineView */
 "Press %@ to write a note, or drop anything here" = "Press %@ to write a note, or drop anything here";
 "Write a note from the menu bar, or drop anything here" = "Write a note from the menu bar, or drop anything here";
