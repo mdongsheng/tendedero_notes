@@ -88,7 +88,9 @@ final class Line: ObservableObject {
 
     @discardableResult
     func hang(_ url: URL, quietly: Bool = false, flying: Bool = false) -> UUID? {
-        guard !items.contains(where: { $0.url == url && !$0.falling }),
+        // One spelling for every file, so a note is never hung twice.
+        let url = URL(fileURLWithPath: url.standardizedFileURL.path)
+        guard !items.contains(where: { isSameFile($0.url, url) && !$0.falling }),
               var item = makeItem(url) else { return nil }
         item.flying = flying
         items.append(item)
@@ -182,7 +184,7 @@ final class Line: ObservableObject {
     /// A note written on the sheet was saved under a new file, a text note
     /// that now carries a picture or a file: it keeps its place on the line.
     func replace(_ old: URL, with new: URL) {
-        guard let i = items.firstIndex(where: { $0.url == old && !$0.falling }),
+        guard let i = items.firstIndex(where: { isSameFile($0.url, old) && !$0.falling }),
               let item = makeItem(new) else { return }
         hitRects[items[i].id] = nil
         items[i] = item
@@ -321,7 +323,7 @@ final class Line: ObservableObject {
 
     /// After editing, the note on the line shows the new version.
     func reloadThumbnail(for url: URL) {
-        guard let i = items.firstIndex(where: { $0.url == url && !$0.falling }),
+        guard let i = items.firstIndex(where: { isSameFile($0.url, url) && !$0.falling }),
               let fresh = makeItem(url) else { return }
         items[i].thumb = fresh.thumb
         items[i].text = fresh.text
@@ -372,7 +374,7 @@ final class Line: ObservableObject {
         let paths = UserDefaults.standard.stringArray(forKey: storeKey) ?? []
         for path in paths where FileManager.default.fileExists(atPath: path) {
             let url = URL(fileURLWithPath: path)
-            guard !items.contains(where: { $0.url == url }), let item = makeItem(url) else { continue }
+            guard !items.contains(where: { isSameFile($0.url, url) }), let item = makeItem(url) else { continue }
             items.append(item)
         }
     }
@@ -402,7 +404,7 @@ final class Line: ObservableObject {
         if !Notes.isImage(url) {
             FileCard.preview(for: url) { [weak self] preview in
                 guard let self,
-                      let i = self.items.firstIndex(where: { $0.url == url && !$0.falling }),
+                      let i = self.items.firstIndex(where: { isSameFile($0.url, url) && !$0.falling }),
                       self.items[i].modified == modified else { return }
                 self.items[i].thumb = preview
             }
@@ -422,4 +424,11 @@ final class Line: ObservableObject {
         sound.volume = volume
         sound.play()
     }
+}
+
+/// Whether two URLs name the same file. A package such as a rich note's
+/// .rtfd is a folder, and a folder listing spells it with a trailing slash
+/// where the path it was saved under has none.
+func isSameFile(_ a: URL, _ b: URL) -> Bool {
+    a.standardizedFileURL.path == b.standardizedFileURL.path
 }
