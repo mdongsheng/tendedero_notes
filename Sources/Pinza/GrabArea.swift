@@ -15,16 +15,21 @@ struct GrabArea: NSViewRepresentable {
     let item: Pegged
     let line: Line
 
+    // SwiftUI always calls these on the main thread. Older SDKs do not say
+    // so, hence the assumption, which newer ones make anyway.
     func makeNSView(context: Context) -> GrabView {
-        let view = GrabView()
-        configure(view)
-        return view
+        MainActor.assumeIsolated {
+            let view = GrabView()
+            configure(view)
+            return view
+        }
     }
 
     func updateNSView(_ view: GrabView, context: Context) {
-        configure(view)
+        MainActor.assumeIsolated { configure(view) }
     }
 
+    @MainActor
     private func configure(_ view: GrabView) {
         let id = item.id
         let line = line
