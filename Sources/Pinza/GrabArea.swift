@@ -35,7 +35,7 @@ struct GrabArea: NSViewRepresentable {
         let id = item.id
         let line = line
         view.url = item.url
-        view.text = { line.text(of: id) }
+        view.pasteboardItem = { line.pasteboardItem(for: id, file: true) }
         view.dragImage = item.thumb
         view.onClick = { line.copy(id) }
         view.onDoubleClick = { line.open(id) }
@@ -89,7 +89,7 @@ final class GrabView: NSView, NSDraggingSource {
     static var isShowingMenu = false
 
     var url: URL?
-    var text: () -> String? = { nil }
+    var pasteboardItem: () -> NSPasteboardItem? = { nil }
     var dragImage: NSImage?
     var onClick: () -> Void = {}
     var onDoubleClick: () -> Void = {}
@@ -172,11 +172,9 @@ final class GrabView: NSView, NSDraggingSource {
         startedDrag = true
         endPress()
 
-        // A text note's words for apps, and the file for Finder, which moves it.
-        let entry = NSPasteboardItem()
-        if let text = text() { entry.setString(text, forType: .string) }
-        entry.setString(url.absoluteString, forType: .fileURL)
-        entry.setData(Data(), forType: Line.ownType)
+        // What a copy gives apps, and the file for Finder, which moves it.
+        let entry = pasteboardItem() ?? NSPasteboardItem()
+        if entry.types.isEmpty { entry.setString(url.absoluteString, forType: .fileURL) }
         let item = NSDraggingItem(pasteboardWriter: entry)
         item.setDraggingFrame(imageFrame(), contents: dragImage)
         let session = beginDraggingSession(with: [item], event: event, source: self)
