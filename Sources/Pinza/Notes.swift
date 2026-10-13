@@ -1,4 +1,5 @@
 import AppKit
+import UniformTypeIdentifiers
 
 /// Where notes live: one file per note, in Pinza's own folder.
 ///
@@ -71,6 +72,24 @@ enum Notes {
             log.error("Could not save a note: \(error.localizedDescription, privacy: .public)")
             return nil
         }
+    }
+
+    /// The files pasted into a rich note, as they are kept inside its
+    /// package, next to the text itself.
+    static func attachedFiles(of url: URL) -> [URL] {
+        guard url.pathExtension.lowercased() == "rtfd",
+              let names = try? FileManager.default.contentsOfDirectory(atPath: url.path) else { return [] }
+        return names.filter { $0 != "TXT.rtf" && !$0.hasPrefix(".") }.sorted()
+            .map { url.appendingPathComponent($0) }
+    }
+
+    /// The words in a file that is a kind of text, Markdown, code or data
+    /// included, or nil for any other kind of file.
+    static func textContents(of url: URL) -> String? {
+        let type = UTType(filenameExtension: url.pathExtension)
+        guard isText(url) || type?.conforms(to: .text) == true,
+              type?.conforms(to: .rtf) != true, type?.conforms(to: .html) != true else { return nil }
+        return read(url)
     }
 
     /// A rich note's text and attachments, or nil if it cannot be read.

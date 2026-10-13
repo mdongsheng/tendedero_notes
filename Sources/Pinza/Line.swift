@@ -200,37 +200,57 @@ final class Line: ObservableObject {
     /// them. An empty string is never offered: apps would paste nothing.
     ///
     /// - A text note: its words.
-    /// - A note with a picture pasted in: the picture as PNG and TIFF, its
-    ///   words if it has any, and the whole note as rich text.
+    /// - A note written on the sheet: its words if it has any, its picture
+    ///   as PNG and TIFF, the whole note as rich text, and the files pasted
+    ///   into it, with the words inside any text file among them, like a
+    ///   Markdown file.
     /// - An image: the picture, and the file.
-    /// - Anything else: the file, which apps paste as the file itself.
+    /// - Any other file: the file, and its words if it is a kind of text.
     ///
-    /// `file` adds the note's file whatever it is, for a drag, so Finder can
-    /// keep it.
-    func pasteboardItem(for id: UUID, file: Bool) -> NSPasteboardItem? {
-        guard let url = url(of: id) else { return nil }
+    /// `file` adds the note's own file first, for a drag, so Finder can keep
+    /// it. A pasteboard item holds one file, so each further file gets an
+    /// item of its own.
+    func pasteboardItems(for id: UUID, file: Bool) -> [NSPasteboardItem] {
+        guard let url = url(of: id) else { return [] }
         let entry = NSPasteboardItem()
-        var offersFile = file
+        var files: [URL] = file ? [url] : []
         if Notes.isRich(url), let rich = Notes.readRich(url) {
-            let words = Notes.plainText(of: rich)
-            let hasWords = !words.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            let attached = Notes.attachedFiles(of: url)
+            var words = Notes.plainText(of: rich).trimmingCharacters(in: .whitespacesAndNewlines)
+            // Only files pasted in: the words inside the text files stand
+            // for the note's own.
+            if words.isEmpty {
+                words = attached.compactMap(Notes.textContents(of:))
+                    .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                    .filter { !$0.isEmpty }
+                    .joined(separator: "\n\n")
+            }
             let picture = Notes.firstImage(in: rich)
             // Only a picture: it comes first, so apps paste it as one.
-            if !hasWords, let picture { setPicture(picture, on: entry) }
+            if words.isEmpty, let picture { setPicture(picture, on: entry) }
             let range = NSRange(location: 0, length: rich.length)
             if let rtfd = rich.rtfd(from: range, documentAttributes: [:]) { entry.setData(rtfd, forType: .rtfd) }
-            if hasWords { entry.setString(words, forType: .string) }
-            if hasWords, let picture { setPicture(picture, on: entry) }
+            if !words.isEmpty { entry.setString(words, forType: .string) }
+            if !words.isEmpty, let picture { setPicture(picture, on: entry) }
+            files += attached.filter { !Notes.isImage($0) }
         } else if let text = text(of: id),
                   !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             entry.setString(text, forType: .string)
         } else {
             if Notes.isImage(url), let image = NSImage(contentsOf: url) { setPicture(image, on: entry, png: pngData(url)) }
-            offersFile = true
+            if let text = Notes.textContents(of: url), !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                entry.setString(text, forType: .string)
+            }
+            if !file { files.append(url) }
         }
-        if offersFile { entry.setString(url.absoluteString, forType: .fileURL) }
         entry.setData(Data(), forType: Line.ownType)
-        return entry
+        var items = [entry]
+        for (n, url) in files.enumerated() {
+            let item = n == 0 ? entry : NSPasteboardItem()
+            item.setString(url.absoluteString, forType: .fileURL)
+            if n > 0 { items.append(item) }
+        }
+        return items
     }
 
     private func setPicture(_ image: NSImage, on entry: NSPasteboardItem, png: Data? = nil) {
@@ -242,10 +262,11 @@ final class Line: ObservableObject {
     }
 
     func copy(_ id: UUID) {
-        guard let entry = pasteboardItem(for: id, file: false) else { return }
+        let items = pasteboardItems(for: id, file: false)
+        guard !items.isEmpty else { return }
         let pb = NSPasteboard.general
         pb.clearContents()
-        pb.writeObjects([entry])
+        pb.writeObjects(items)
 
         copiedID = id
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in
