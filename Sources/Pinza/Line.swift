@@ -445,6 +445,20 @@ final class Line: ObservableObject {
                let thumb = NoteCard.render(text, image: picture) {
                 return Pegged(url: url, thumb: thumb, text: text, picture: picture, modified: modified)
             }
+            // Only files pasted in: the note looks like the first of them,
+            // its words on paper for a text file, or else its preview. It is
+            // still a written note, and holding it opens the sheet.
+            if let first = Notes.attachedFiles(of: url).first {
+                if let words = Notes.textContents(of: first),
+                   !words.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                   let thumb = NoteCard.render(words) {
+                    return Pegged(url: url, thumb: thumb, text: words, modified: modified)
+                }
+                if let thumb = FileCard.placeholder(for: first) {
+                    previewLater(first, for: url, modified: modified)
+                    return Pegged(url: url, thumb: thumb, text: "", modified: modified)
+                }
+            }
         }
         if Notes.isText(url), let text = Notes.read(url),
            !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
@@ -453,15 +467,20 @@ final class Line: ObservableObject {
         }
         guard FileManager.default.fileExists(atPath: url.path),
               let thumb = FileCard.placeholder(for: url) else { return nil }
-        if !Notes.isImage(url) {
-            FileCard.preview(for: url) { [weak self] preview in
-                guard let self,
-                      let i = self.items.firstIndex(where: { isSameFile($0.url, url) && !$0.falling }),
-                      self.items[i].modified == modified else { return }
-                self.items[i].thumb = preview
-            }
-        }
+        if !Notes.isImage(url) { previewLater(url, for: url, modified: modified) }
         return Pegged(url: url, thumb: thumb, text: nil, modified: modified)
+    }
+
+    /// Quick Look draws a file's preview a moment later. It replaces the
+    /// card's placeholder, unless the note changed in the meantime; a file
+    /// it cannot draw keeps the placeholder, which names its type.
+    private func previewLater(_ file: URL, for note: URL, modified: Date?) {
+        FileCard.preview(for: file) { [weak self] preview in
+            guard let self,
+                  let i = self.items.firstIndex(where: { isSameFile($0.url, note) && !$0.falling }),
+                  self.items[i].modified == modified else { return }
+            self.items[i].thumb = preview
+        }
     }
 
     private func pngData(_ url: URL) -> Data? {

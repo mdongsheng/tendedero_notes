@@ -264,7 +264,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // Sharp while it starts out at the sheet's size: drawn as large as the
         // editor's paper, which is several times the card's.
         let scale = screen.backingScaleFactor * max(1, min(4, from.width / to.width))
-        let sharp = item.text.flatMap { NoteCard.render($0, image: item.picture, scale: scale) } ?? item.thumb
+        // A note shown as a file's preview flies as that preview.
+        let written = item.picture != nil || !(item.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let sharp = (written ? item.text.flatMap { NoteCard.render($0, image: item.picture, scale: scale) } : nil)
+            ?? item.thumb
         guard let image = sharp.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
             line.land(id)
             return

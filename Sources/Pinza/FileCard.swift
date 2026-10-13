@@ -3,8 +3,8 @@ import QuickLookThumbnailing
 
 /// How a note that is not text hangs: as its own preview, the way Finder
 /// shows it, in the same glass frame. Until Quick Look has drawn that
-/// preview, and for files it cannot draw, it hangs as a sheet of paper with
-/// the file's icon and name.
+/// preview, and for files it cannot draw, it hangs as a sheet of paper that
+/// names the file's type, ".md", ".pptx", ".docx", with its icon and name.
 enum FileCard {
     /// Shown at once. An image is its own thumbnail straight away.
     static func placeholder(for url: URL) -> NSImage? {
@@ -39,10 +39,20 @@ enum FileCard {
         return NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height))
     }
 
-    /// The file's icon above its name, on the same paper as a written note.
+    /// What a file is, as it is written at the end of its name: ".md",
+    /// ".pptx", ".docx". A file without one says what kind it is.
+    static func typeLabel(for url: URL) -> String {
+        let ext = url.pathExtension
+        if !ext.isEmpty { return "." + ext.lowercased() }
+        return (try? url.resourceValues(forKeys: [.localizedTypeDescriptionKey]).localizedTypeDescription) ?? ""
+    }
+
+    /// For a file Quick Look cannot preview: its type in large letters, so it
+    /// reads from across the screen, over its icon and under it its name, on
+    /// the same paper as a written note.
     private static func iconSheet(for url: URL) -> NSImage? {
         let s = Layout.size.scale
-        let sheet = CGSize(width: Layout.cardWidth - 14, height: (Layout.sheetMaxHeight * 0.82).rounded())
+        let sheet = CGSize(width: Layout.cardWidth - 14, height: (Layout.sheetMaxHeight * 0.86).rounded())
         let scale: CGFloat = 2
         let pw = Int(sheet.width * scale), ph = Int(sheet.height * scale)
         guard let space = CGColorSpace(name: CGColorSpace.sRGB),
@@ -57,21 +67,32 @@ enum FileCard {
         NoteCard.paper.setFill()
         NSRect(origin: .zero, size: sheet).fill()
 
-        let iconSide = (40 * s).rounded()
+        let iconSide = (32 * s).rounded()
+        var y = 7 * s
         let icon = NSWorkspace.shared.icon(forFile: url.path)
-        icon.draw(in: NSRect(x: (sheet.width - iconSide) / 2, y: 8 * s, width: iconSide, height: iconSide),
+        icon.draw(in: NSRect(x: (sheet.width - iconSide) / 2, y: y, width: iconSide, height: iconSide),
                   from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
+        y += iconSide + 2 * s
 
-        let paragraph = NSMutableParagraphStyle()
-        paragraph.alignment = .center
-        paragraph.lineBreakMode = .byTruncatingMiddle
-        let name = NSAttributedString(string: url.lastPathComponent, attributes: [
-            .font: NSFont.systemFont(ofSize: 10 * s, weight: .medium),
+        let centred = NSMutableParagraphStyle()
+        centred.alignment = .center
+        centred.lineBreakMode = .byTruncatingMiddle
+        let type = NSAttributedString(string: typeLabel(for: url), attributes: [
+            .font: NSFont.systemFont(ofSize: 17 * s, weight: .bold),
             .foregroundColor: NoteCard.ink,
-            .paragraphStyle: paragraph,
+            .paragraphStyle: centred,
         ])
-        let top = 8 * s + iconSide + 5 * s
-        name.draw(with: NSRect(x: 8 * s, y: top, width: sheet.width - 16 * s, height: sheet.height - top - 6 * s),
+        let typeHeight = ceil(19 * s * 1.25)
+        type.draw(with: NSRect(x: 6 * s, y: y, width: sheet.width - 12 * s, height: typeHeight),
+                  options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine])
+        y += typeHeight
+
+        let name = NSAttributedString(string: url.lastPathComponent, attributes: [
+            .font: NSFont.systemFont(ofSize: 9 * s, weight: .medium),
+            .foregroundColor: NoteCard.pencil,
+            .paragraphStyle: centred,
+        ])
+        name.draw(with: NSRect(x: 8 * s, y: y, width: sheet.width - 16 * s, height: max(0, sheet.height - y - 4 * s)),
                   options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine])
         NSGraphicsContext.restoreGraphicsState()
 
